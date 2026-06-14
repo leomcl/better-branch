@@ -1,18 +1,14 @@
-use std::{io, ops::Rem};
+// Most code in here taken from https://github.com/console-rs/dialoguer
 use console::{Key, Term};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use std::{io, ops::Rem};
 
-use crate::fuzzy_select::{
-    renderer::TermThemeRenderer,
-    theme::Theme,
-    Result,
-};
+use crate::theme::render::TermThemeRenderer;
+use crate::theme::Theme;
 
-/// Renders a select prompt with fuzzy search.
-///
-/// User can use fuzzy search to limit selectable items.
-/// Interaction returns index of an item selected in the order they appear in `item` invocation or `items` slice.
+pub type Result<T = ()> = std::result::Result<T, io::Error>;
+
 #[derive(Clone)]
 pub struct FuzzySelect<'a> {
     default: Option<usize>,
@@ -24,14 +20,11 @@ pub struct FuzzySelect<'a> {
     enable_vim_mode: bool,
     max_length: Option<usize>,
     theme: &'a dyn Theme,
-    /// Search string that a fuzzy search with start with.
-    /// Defaults to an empty string.
     initial_text: String,
 }
 
 #[allow(dead_code)]
 impl<'a> FuzzySelect<'a> {
-    /// Creates a fuzzy select prompt with a specific theme.
     pub fn with_theme(theme: &'a dyn Theme) -> Self {
         Self {
             default: None,
@@ -47,27 +40,21 @@ impl<'a> FuzzySelect<'a> {
         }
     }
 
-    /// Sets the clear behavior of the menu.
-    ///
-    /// The default is to clear the menu.
     pub fn clear(mut self, val: bool) -> Self {
         self.clear = val;
         self
     }
 
-    /// Sets a default for the menu
     pub fn default(mut self, val: usize) -> Self {
         self.default = Some(val);
         self
     }
 
-    /// Add a single item to the fuzzy selector.
     pub fn item<T: ToString>(mut self, item: T) -> Self {
         self.items.push(item.to_string());
         self
     }
 
-    /// Adds multiple items to the fuzzy selector.
     pub fn items<T: ToString>(mut self, items: &[T]) -> Self {
         for item in items {
             self.items.push(item.to_string());
@@ -75,92 +62,58 @@ impl<'a> FuzzySelect<'a> {
         self
     }
 
-    /// Sets the search text that a fuzzy search starts with.
     pub fn with_initial_text<S: Into<String>>(mut self, initial_text: S) -> Self {
         self.initial_text = initial_text.into();
         self
     }
 
-    /// Prefaces the menu with a prompt.
-    ///
-    /// When a prompt is set the system also prints out a confirmation after
-    /// the fuzzy selection.
     pub fn with_prompt<S: Into<String>>(mut self, prompt: S) -> Self {
         self.prompt = prompt.into();
         self
     }
 
-    /// Indicates whether to report the selected value after interaction.
-    ///
-    /// The default is to report the selection.
     pub fn report(mut self, val: bool) -> Self {
         self.report = val;
         self
     }
 
-    /// Indicates whether to highlight matched indices
-    ///
-    /// The default is to highlight the indices
     pub fn highlight_matches(mut self, val: bool) -> Self {
         self.highlight_matches = val;
         self
     }
 
-    /// Indicated whether to allow the use of vim mode
-    ///
-    /// Vim mode can be entered by pressing Escape.
-    /// This then allows the user to navigate using hjkl.
-    ///
-    /// The default is to disable vim mode.
     pub fn vim_mode(mut self, val: bool) -> Self {
         self.enable_vim_mode = val;
         self
     }
 
-    /// Sets the maximum number of visible options.
-    ///
-    /// The default is the height of the terminal minus 2.
     pub fn max_length(mut self, rows: usize) -> Self {
         self.max_length = Some(rows);
         self
     }
 
-    /// Enables user interaction and returns the result.
-    ///
-    /// The user can select the items using 'Enter' and the index of selected item will be returned.
-    /// The dialog is rendered on stderr.
-    /// Result contains `index` of selected item if user hit 'Enter'.
-    /// This unlike [`interact_opt`](Self::interact_opt) does not allow to quit with 'Esc' or 'q'.
     #[inline]
     pub fn interact(self) -> Result<usize> {
         self.interact_on(&Term::stderr())
     }
 
-    /// Enables user interaction and returns the result.
-    ///
-    /// The user can select the items using 'Enter' and the index of selected item will be returned.
-    /// The dialog is rendered on stderr.
-    /// Result contains `Some(index)` if user hit 'Enter' or `None` if user cancelled with 'Esc' or 'q'.
     #[inline]
     pub fn interact_opt(self) -> Result<Option<usize>> {
         self.interact_on_opt(&Term::stderr())
     }
 
-    /// Like [`interact`](Self::interact) but allows a specific terminal to be set.
     #[inline]
     pub fn interact_on(self, term: &Term) -> Result<usize> {
         self._interact_on(term, false)?
             .ok_or_else(|| io::Error::other("Quit not allowed in this case"))
     }
 
-    /// Like [`interact_opt`](Self::interact_opt) but allows a specific terminal to be set.
     #[inline]
     pub fn interact_on_opt(self, term: &Term) -> Result<Option<usize>> {
         self._interact_on(term, true)
     }
 
     fn _interact_on(self, term: &Term, allow_quit: bool) -> Result<Option<usize>> {
-        // Place cursor at the end of the search term
         let mut cursor = self.initial_text.chars().count();
         let mut search_term = self.initial_text.to_owned();
 
@@ -173,16 +126,13 @@ impl<'a> FuzzySelect<'a> {
             size_vec.push(*size);
         }
 
-        // Fuzzy matcher
         let matcher = SkimMatcherV2::default();
 
-        // Subtract -2 because we need space to render the prompt.
         let visible_term_rows = (term.size().0 as usize).max(3) - 2;
         let visible_term_rows = self
             .max_length
             .unwrap_or(visible_term_rows)
             .min(visible_term_rows);
-        // Variable used to determine if we need to scroll through the list.
         let mut starting_row = 0;
 
         term.hide_cursor()?;
@@ -200,7 +150,6 @@ impl<'a> FuzzySelect<'a> {
             render.clear()?;
             render.fuzzy_select_prompt(self.prompt.as_str(), &search_term, byte_indices[cursor])?;
 
-            // Maps all items to a tuple of item and its match score.
             let mut filtered_list = self
                 .items
                 .iter()
@@ -208,7 +157,6 @@ impl<'a> FuzzySelect<'a> {
                 .filter_map(|(item, score)| score.map(|s| (item, s)))
                 .collect::<Vec<(&String, i64)>>();
 
-            // Renders all matching items, from best match to worst.
             filtered_list.sort_unstable_by(|(_, s1), (_, s2)| s2.cmp(s1));
 
             for (idx, (item, _)) in filtered_list
@@ -242,7 +190,6 @@ impl<'a> FuzzySelect<'a> {
                 (Key::Char('i' | 'a'), _, true) => {
                     vim_mode = false;
                 }
-                // Ctrl-P or ArrowUp/BackTab or 'k' in vim mode
                 (Key::Char('\x10'), _, _)
                 | (Key::ArrowUp | Key::BackTab, _, _)
                 | (Key::Char('k'), _, true)
@@ -258,12 +205,12 @@ impl<'a> FuzzySelect<'a> {
                         None => Some(filtered_list.len() - 1),
                         Some(sel) => Some(
                             ((sel as i64 - 1 + filtered_list.len() as i64)
-                                % (filtered_list.len() as i64)) as usize,
+                                % (filtered_list.len() as i64))
+                                as usize,
                         ),
                     };
                     term.flush()?;
                 }
-                // Ctrl-N or ArrowDown/Tab or 'j' in vim mode
                 (Key::Char('\x0e'), _, _)
                 | (Key::ArrowDown | Key::Tab, _, _)
                 | (Key::Char('j'), _, true)

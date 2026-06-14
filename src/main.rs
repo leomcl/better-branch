@@ -1,6 +1,8 @@
-mod fuzzy_select;
+mod prompts;
+mod theme;
 
-use crate::fuzzy_select::{ColorfulTheme, FuzzySelect};
+use crate::prompts::FuzzySelect;
+use crate::theme::colorful::ColorfulTheme;
 use std::process::{exit, Command};
 
 fn main() {

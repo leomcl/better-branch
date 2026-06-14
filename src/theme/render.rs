@@ -1,9 +1,11 @@
-use std::{fmt, io};
+// Most code in here taken from https://github.com/console-rs/dialoguer
+
+use crate::prompts::fuzzy_select::Result;
+use crate::theme::Theme;
 use console::Term;
 use fuzzy_matcher::skim::SkimMatcherV2;
-use crate::fuzzy_select::{Result, theme::Theme};
+use std::{fmt, io};
 
-/// Helper struct to conveniently render a theme.
 pub(crate) struct TermThemeRenderer<'a> {
     term: &'a Term,
     theme: &'a dyn Theme,
@@ -23,7 +25,9 @@ impl<'a> TermThemeRenderer<'a> {
         }
     }
 
-    fn write_formatted_line<F: FnOnce(&mut TermThemeRenderer, &mut dyn fmt::Write) -> fmt::Result>(
+    fn write_formatted_line<
+        F: FnOnce(&mut TermThemeRenderer, &mut dyn fmt::Write) -> fmt::Result,
+    >(
         &mut self,
         f: F,
     ) -> Result {

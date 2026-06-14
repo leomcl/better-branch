@@ -1,40 +1,11 @@
-use std::fmt;
+// Most code in here taken from https://github.com/console-rs/dialoguer
+
+use crate::theme::Theme;
 use console::{style, Style};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use std::fmt;
 
-/// Implements a theme for the fuzzy selector.
-pub trait Theme {
-    /// Formats a fuzzy select prompt.
-    fn format_fuzzy_select_prompt(
-        &self,
-        f: &mut dyn fmt::Write,
-        prompt: &str,
-        search_term: &str,
-        bytes_pos: usize,
-    ) -> fmt::Result;
-
-    /// Formats a fuzzy select prompt item.
-    fn format_fuzzy_select_prompt_item(
-        &self,
-        f: &mut dyn fmt::Write,
-        text: &str,
-        active: bool,
-        highlight_matches: bool,
-        matcher: &SkimMatcherV2,
-        search_term: &str,
-    ) -> fmt::Result;
-
-    /// Formats an input prompt after selection.
-    fn format_input_prompt_selection(
-        &self,
-        f: &mut dyn fmt::Write,
-        prompt: &str,
-        sel: &str,
-    ) -> fmt::Result;
-}
-
-/// A colorful theme for the fuzzy selector.
 pub struct ColorfulTheme {
     pub prompt_prefix: String,
     pub prompt_suffix: String,
@@ -52,7 +23,11 @@ impl Default for ColorfulTheme {
     fn default() -> Self {
         Self {
             prompt_prefix: style("?".to_string()).yellow().for_stderr().to_string(),
-            prompt_suffix: style("›".to_string()).black().bright().for_stderr().to_string(),
+            prompt_suffix: style("›".to_string())
+                .black()
+                .bright()
+                .for_stderr()
+                .to_string(),
             prompt_style: Style::new().for_stderr().bold(),
             active_item_prefix: style("❯".to_string()).green().for_stderr().to_string(),
             inactive_item_prefix: " ".to_string(),
@@ -156,6 +131,11 @@ impl Theme for ColorfulTheme {
                 self.prompt_style.apply_to(prompt)
             )?;
         }
-        write!(f, "{} {}", self.prompt_suffix, self.success_style.apply_to(sel))
+        write!(
+            f,
+            "{} {}",
+            self.prompt_suffix,
+            self.success_style.apply_to(sel)
+        )
     }
 }
