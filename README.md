@@ -2,6 +2,8 @@
 
 Better version of git branch IMO.
 
+![Better Branch Demo](demo.gif)
+
 Better Branch provides a fuzzy search interface for your Git branches and keyboard shortcuts.
 
 ## Features
