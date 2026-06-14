@@ -1,5 +1,7 @@
-use dialoguer::{theme::ColorfulTheme, Select};
-use std::process::{Command, exit};
+mod fuzzy_select;
+
+use crate::fuzzy_select::{ColorfulTheme, FuzzySelect};
+use std::process::{exit, Command};
 
 fn main() {
     let output = Command::new("git")
@@ -13,7 +15,7 @@ fn main() {
     }
 
     let branches_str = String::from_utf8_lossy(&output.stdout);
-    let mut branches: Vec<&str> = branches_str
+    let branches: Vec<&str> = branches_str
         .lines()
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
@@ -24,17 +26,17 @@ fn main() {
         return;
     }
 
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Select a branch to checkout")
+    let selection = FuzzySelect::with_theme(&ColorfulTheme::default())
         .default(0)
         .items(&branches)
+        .vim_mode(true)
         .interact()
         .unwrap();
 
     let selected_branch = branches[selection];
 
     println!("Checking out {}...", selected_branch);
-    
+
     let status = Command::new("git")
         .args(["checkout", selected_branch])
         .status()
