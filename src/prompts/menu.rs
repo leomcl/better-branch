@@ -26,7 +26,7 @@ enum Action {
 }
 
 #[derive(Clone)]
-pub struct FuzzySelect<'a> {
+pub struct Menu<'a> {
     default: Option<usize>,
     items: Vec<String>,
     prompt: String,
@@ -40,7 +40,7 @@ pub struct FuzzySelect<'a> {
 }
 
 #[allow(dead_code)]
-impl<'a> FuzzySelect<'a> {
+impl<'a> Menu<'a> {
     pub fn with_theme(theme: &'a dyn Theme) -> Self {
         Self {
             default: None,

@@ -1,4 +1,4 @@
 // Most code in here taken from https://github.com/console-rs/dialoguer
-pub mod fuzzy_select;
+pub mod menu;
 
-pub use fuzzy_select::FuzzySelect;
+pub use menu::Menu;

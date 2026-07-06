@@ -1,6 +1,6 @@
 // Most code in here taken from https://github.com/console-rs/dialoguer
 
-use crate::prompts::fuzzy_select::Result;
+use crate::prompts::menu::Result;
 use crate::theme::Theme;
 use console::Term;
 use fuzzy_matcher::skim::SkimMatcherV2;

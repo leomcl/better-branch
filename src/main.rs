@@ -1,7 +1,7 @@
 mod prompts;
 mod theme;
 
-use crate::prompts::FuzzySelect;
+use crate::prompts::Menu;
 use crate::theme::colorful::ColorfulTheme;
 use std::process::{exit, Command};
 
@@ -28,7 +28,7 @@ fn main() {
         return;
     }
 
-    let selection = FuzzySelect::with_theme(&ColorfulTheme::default())
+    let selection = Menu::with_theme(&ColorfulTheme::default())
         .default(0)
         .items(&branches)
         .vim_mode(true)
