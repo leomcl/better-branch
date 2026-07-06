@@ -9,6 +9,22 @@ use crate::theme::Theme;
 
 pub type Result<T = ()> = std::result::Result<T, io::Error>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Action {
+    VimEscape,
+    Quit,
+    VimInsert,
+    MoveUp,
+    MoveDown,
+    MoveLeft,
+    MoveRight,
+    Select,
+    Backspace,
+    Delete,
+    InsertChar(char),
+    None,
+}
+
 #[derive(Clone)]
 pub struct FuzzySelect<'a> {
     default: Option<usize>,
@@ -175,108 +191,251 @@ impl<'a> FuzzySelect<'a> {
             }
             term.flush()?;
 
-            match (term.read_key()?, sel, vim_mode) {
-                (Key::Escape, _, false) if self.enable_vim_mode => {
-                    vim_mode = true;
+            let key = term.read_key()?;
+            match self.classify_action(&key, vim_mode, allow_quit, cursor, byte_indices.len(), filtered_list.is_empty()) {
+                Action::VimEscape => {
+                    self.handle_vim_mode_escape(&mut vim_mode);
                 }
-                (Key::Escape, _, false) | (Key::Char('q'), _, true) if allow_quit => {
-                    if self.clear {
-                        render.clear()?;
-                        term.flush()?;
+                Action::Quit => {
+                    return self.handle_quit(term, &mut render);
+                }
+                Action::VimInsert => {
+                    self.handle_vim_mode_insert(&mut vim_mode);
+                }
+                Action::MoveUp => {
+                    self.handle_move_up(
+                        term,
+                        filtered_list.len(),
+                        visible_term_rows,
+                        &mut sel,
+                        &mut starting_row,
+                    )?;
+                }
+                Action::MoveDown => {
+                    self.handle_move_down(
+                        term,
+                        filtered_list.len(),
+                        visible_term_rows,
+                        &mut sel,
+                        &mut starting_row,
+                    )?;
+                }
+                Action::MoveLeft => {
+                    self.handle_move_left(term, &mut cursor)?;
+                }
+                Action::MoveRight => {
+                    self.handle_move_right(term, &mut cursor)?;
+                }
+                Action::Select => {
+                    if let Some(sel_idx) = sel {
+                        return self.handle_select(term, &mut render, &filtered_list, sel_idx);
                     }
-                    term.show_cursor()?;
-                    return Ok(None);
                 }
-                (Key::Char('i' | 'a'), _, true) => {
-                    vim_mode = false;
+                Action::Backspace => {
+                    self.handle_backspace(term, &mut cursor, &mut search_term, &byte_indices)?;
                 }
-                (Key::Char('\x10'), _, _)
-                | (Key::ArrowUp | Key::BackTab, _, _)
-                | (Key::Char('k'), _, true)
-                    if !filtered_list.is_empty() =>
-                {
-                    if sel == Some(0) {
-                        starting_row =
-                            filtered_list.len().max(visible_term_rows) - visible_term_rows;
-                    } else if sel == Some(starting_row) {
-                        starting_row -= 1;
-                    }
-                    sel = match sel {
-                        None => Some(filtered_list.len() - 1),
-                        Some(sel) => Some(
-                            ((sel as i64 - 1 + filtered_list.len() as i64)
-                                % (filtered_list.len() as i64))
-                                as usize,
-                        ),
-                    };
-                    term.flush()?;
+                Action::Delete => {
+                    self.handle_delete(term, cursor, &mut search_term, &byte_indices)?;
                 }
-                (Key::Char('\x0e'), _, _)
-                | (Key::ArrowDown | Key::Tab, _, _)
-                | (Key::Char('j'), _, true)
-                    if !filtered_list.is_empty() =>
-                {
-                    sel = match sel {
-                        None => Some(0),
-                        Some(sel) => {
-                            Some((sel as u64 + 1).rem(filtered_list.len() as u64) as usize)
-                        }
-                    };
-                    if sel == Some(visible_term_rows + starting_row) {
-                        starting_row += 1;
-                    } else if sel == Some(0) {
-                        starting_row = 0;
-                    }
-                    term.flush()?;
+                Action::InsertChar(chr) => {
+                    self.handle_char(
+                        term,
+                        chr,
+                        &mut cursor,
+                        &mut search_term,
+                        &byte_indices,
+                        &mut sel,
+                        &mut starting_row,
+                    )?;
                 }
-                (Key::ArrowLeft, _, _) | (Key::Char('h'), _, true) if cursor > 0 => {
-                    cursor -= 1;
-                    term.flush()?;
-                }
-                (Key::ArrowRight, _, _) | (Key::Char('l'), _, true)
-                    if cursor < byte_indices.len() - 1 =>
-                {
-                    cursor += 1;
-                    term.flush()?;
-                }
-                (Key::Enter, Some(sel), _) if !filtered_list.is_empty() => {
-                    if self.clear {
-                        render.clear()?;
-                    }
-
-                    if self.report {
-                        render
-                            .input_prompt_selection(self.prompt.as_str(), filtered_list[sel].0)?;
-                    }
-
-                    let sel_string = filtered_list[sel].0;
-                    let sel_string_pos_in_items =
-                        self.items.iter().position(|item| item.eq(sel_string));
-
-                    term.show_cursor()?;
-                    return Ok(sel_string_pos_in_items);
-                }
-                (Key::Backspace, _, _) if cursor > 0 => {
-                    cursor -= 1;
-                    search_term.remove(byte_indices[cursor]);
-                    term.flush()?;
-                }
-                (Key::Del, _, _) if cursor < byte_indices.len() - 1 => {
-                    search_term.remove(byte_indices[cursor]);
-                    term.flush()?;
-                }
-                (Key::Char(chr), _, _) if !chr.is_ascii_control() => {
-                    search_term.insert(byte_indices[cursor], chr);
-                    cursor += 1;
-                    term.flush()?;
-                    sel = Some(0);
-                    starting_row = 0;
-                }
-
-                _ => {}
+                Action::None => {}
             }
 
             render.clear_preserve_prompt(&size_vec)?;
+        }
+    }
+
+    fn handle_vim_mode_escape(&self, vim_mode: &mut bool) {
+        *vim_mode = true;
+    }
+
+    fn handle_quit(
+        &self,
+        term: &Term,
+        render: &mut TermThemeRenderer,
+    ) -> Result<Option<usize>> {
+        if self.clear {
+            render.clear()?;
+            term.flush()?;
+        }
+        term.show_cursor()?;
+        Ok(None)
+    }
+
+    fn handle_vim_mode_insert(&self, vim_mode: &mut bool) {
+        *vim_mode = false;
+    }
+
+    fn handle_move_up(
+        &self,
+        term: &Term,
+        filtered_list_len: usize,
+        visible_term_rows: usize,
+        sel: &mut Option<usize>,
+        starting_row: &mut usize,
+    ) -> Result {
+        if *sel == Some(0) {
+            *starting_row = filtered_list_len.max(visible_term_rows) - visible_term_rows;
+        } else if *sel == Some(*starting_row) {
+            *starting_row -= 1;
+        }
+        *sel = match *sel {
+            None => Some(filtered_list_len - 1),
+            Some(s) => Some(
+                ((s as i64 - 1 + filtered_list_len as i64) % (filtered_list_len as i64)) as usize,
+            ),
+        };
+        term.flush()?;
+        Ok(())
+    }
+
+    fn handle_move_down(
+        &self,
+        term: &Term,
+        filtered_list_len: usize,
+        visible_term_rows: usize,
+        sel: &mut Option<usize>,
+        starting_row: &mut usize,
+    ) -> Result {
+        *sel = match *sel {
+            None => Some(0),
+            Some(s) => Some((s as u64 + 1).rem(filtered_list_len as u64) as usize),
+        };
+        if *sel == Some(visible_term_rows + *starting_row) {
+            *starting_row += 1;
+        } else if *sel == Some(0) {
+            *starting_row = 0;
+        }
+        term.flush()?;
+        Ok(())
+    }
+
+    fn handle_move_left(&self, term: &Term, cursor: &mut usize) -> Result {
+        *cursor -= 1;
+        term.flush()?;
+        Ok(())
+    }
+
+    fn handle_move_right(&self, term: &Term, cursor: &mut usize) -> Result {
+        *cursor += 1;
+        term.flush()?;
+        Ok(())
+    }
+
+    fn handle_select(
+        &self,
+        term: &Term,
+        render: &mut TermThemeRenderer,
+        filtered_list: &[(&String, i64)],
+        sel: usize,
+    ) -> Result<Option<usize>> {
+        if self.clear {
+            render.clear()?;
+        }
+
+        if self.report {
+            render.input_prompt_selection(self.prompt.as_str(), filtered_list[sel].0)?;
+        }
+
+        let sel_string = filtered_list[sel].0;
+        let sel_string_pos_in_items = self.items.iter().position(|item| item.eq(sel_string));
+
+        term.show_cursor()?;
+        Ok(sel_string_pos_in_items)
+    }
+
+    fn handle_backspace(
+        &self,
+        term: &Term,
+        cursor: &mut usize,
+        search_term: &mut String,
+        byte_indices: &[usize],
+    ) -> Result {
+        *cursor -= 1;
+        search_term.remove(byte_indices[*cursor]);
+        term.flush()?;
+        Ok(())
+    }
+
+    fn handle_delete(
+        &self,
+        term: &Term,
+        cursor: usize,
+        search_term: &mut String,
+        byte_indices: &[usize],
+    ) -> Result {
+        search_term.remove(byte_indices[cursor]);
+        term.flush()?;
+        Ok(())
+    }
+
+    fn handle_char(
+        &self,
+        term: &Term,
+        chr: char,
+        cursor: &mut usize,
+        search_term: &mut String,
+        byte_indices: &[usize],
+        sel: &mut Option<usize>,
+        starting_row: &mut usize,
+    ) -> Result {
+        search_term.insert(byte_indices[*cursor], chr);
+        *cursor += 1;
+        term.flush()?;
+        *sel = Some(0);
+        *starting_row = 0;
+        Ok(())
+    }
+
+    fn classify_action(
+        &self,
+        key: &Key,
+        vim_mode: bool,
+        allow_quit: bool,
+        cursor: usize,
+        byte_indices_len: usize,
+        filtered_list_is_empty: bool,
+    ) -> Action {
+        match (key, vim_mode) {
+            (Key::Escape, false) if self.enable_vim_mode => Action::VimEscape,
+
+            (Key::Escape, false) if allow_quit => Action::Quit,
+            (Key::Char('q'), true) if allow_quit => Action::Quit,
+
+            (Key::Char('i' | 'a'), true) => Action::VimInsert,
+
+            (Key::Char('\x10'), _) if !filtered_list_is_empty => Action::MoveUp,
+            (Key::ArrowUp | Key::BackTab, _) if !filtered_list_is_empty => Action::MoveUp,
+            (Key::Char('k'), true) if !filtered_list_is_empty => Action::MoveUp,
+
+            (Key::Char('\x0e'), _) if !filtered_list_is_empty => Action::MoveDown,
+            (Key::ArrowDown | Key::Tab, _) if !filtered_list_is_empty => Action::MoveDown,
+            (Key::Char('j'), true) if !filtered_list_is_empty => Action::MoveDown,
+
+            (Key::ArrowLeft, _) if cursor > 0 => Action::MoveLeft,
+            (Key::Char('h'), true) if cursor > 0 => Action::MoveLeft,
+
+            (Key::ArrowRight, _) if cursor < byte_indices_len - 1 => Action::MoveRight,
+            (Key::Char('l'), true) if cursor < byte_indices_len - 1 => Action::MoveRight,
+
+            (Key::Enter, _) if !filtered_list_is_empty => Action::Select,
+
+            (Key::Backspace, _) if cursor > 0 => Action::Backspace,
+            (Key::Del, _) if cursor < byte_indices_len - 1 => Action::Delete,
+
+            (Key::Char(chr), _) if !chr.is_ascii_control() => Action::InsertChar(*chr),
+
+            _ => Action::None,
         }
     }
 }
