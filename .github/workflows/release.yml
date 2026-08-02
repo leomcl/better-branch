@@ -1,0 +1,90 @@
+name: Build, Release, and Update Tap
+
+on:
+  push:
+    tags:
+      - "v*.*.*" # Triggers when push a tag
+
+jobs:
+  build-mac:
+    name: Build macOS Binaries
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        target:
+          - aarch64-apple-darwin # Apple Silicon
+          - x86_64-apple-darwin # Intel
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package binary
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar -czvf better-branch-${{ matrix.target }}.tar.gz better-branch
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/${{ matrix.target }}/release/better-branch-${{ matrix.target }}.tar.gz
+
+  update-tap:
+    name: Update Homebrew Tap
+    needs: build-mac
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get tag name
+        id: tag
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Download release assets for SHA calculation
+        run: |
+          curl -sL -o aarch64.tar.gz "https://github.com/leomcl/better-branch/releases/download/${{ env.VERSION }}/better-branch-aarch64-apple-darwin.tar.gz"
+          curl -sL -o x86_64.tar.gz "https://github.com/leomcl/better-branch/releases/download/${{ env.VERSION }}/better-branch-x86_64-apple-darwin.tar.gz"
+
+          echo "SHA_ARM=$(sha256sum aarch64.tar.gz | awk '{ print $1 }')" >> $GITHUB_ENV
+          echo "SHA_INTEL=$(sha256sum x86_64.tar.gz | awk '{ print $1 }')" >> $GITHUB_ENV
+
+      - name: Checkout Homebrew Tap
+        uses: actions/checkout@v4
+        with:
+          repository: leomcl/homebrew-tap
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+
+      - name: Update Formula
+        run: |
+          cat << EOF > Formula/better-branch.rb
+          class BetterBranch < Formula
+            desc "An interactive, fuzzy-finding terminal UI for switching Git branches"
+            homepage "https://github.com/leomcl/better-branch"
+            version "${{ env.VERSION }}"
+
+            if Hardware::CPU.arm?
+              url "https://github.com/leomcl/better-branch/releases/download/${{ env.VERSION }}/better-branch-aarch64-apple-darwin.tar.gz"
+              sha256 "${{ env.SHA_ARM }}"
+            else
+              url "https://github.com/leomcl/better-branch/releases/download/${{ env.VERSION }}/better-branch-x86_64-apple-darwin.tar.gz"
+              sha256 "${{ env.SHA_INTEL }}"
+            end
+
+            def install
+              bin.install "better-branch"
+            end
+          end
+          EOF
+
+      - name: Commit and push to Tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/better-branch.rb
+          git commit -m "Update better-branch to ${{ env.VERSION }}"
+          git push
