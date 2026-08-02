@@ -4,6 +4,7 @@ use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use std::fmt;
 
+#[allow(clippy::too_many_arguments)]
 fn write_item_text(
     f: &mut dyn fmt::Write,
     text: &str,
@@ -50,8 +51,11 @@ pub struct ColorfulTheme {
     pub current_branch_style: Style,
     pub fuzzy_match_highlight_style: Style,
     pub fuzzy_cursor_style: Style,
+    #[allow(dead_code)]
     pub success_prefix: String,
+    #[allow(dead_code)]
     pub success_style: Style,
+    pub selected_tick_style: Style,
 }
 
 impl Default for ColorfulTheme {
@@ -72,6 +76,7 @@ impl Default for ColorfulTheme {
             fuzzy_cursor_style: Style::new().for_stderr().black().on_white(),
             success_prefix: style("✔".to_string()).green().for_stderr().to_string(),
             success_style: Style::new().for_stderr().green(),
+            selected_tick_style: Style::new().for_stderr().green(),
         }
     }
 }
@@ -83,6 +88,7 @@ impl Theme for ColorfulTheme {
         prompt: &str,
         search_term: &str,
         bytes_pos: usize,
+        selection_count: usize,
     ) -> fmt::Result {
         if !prompt.is_empty() {
             write!(
@@ -99,7 +105,21 @@ impl Theme for ColorfulTheme {
         let st_cursor = self.fuzzy_cursor_style.apply_to(chr);
         let st_tail = chars.as_str();
 
-        write!(f, "{} {st_head}{st_cursor}{st_tail}", self.prompt_suffix)
+        write!(f, "{} {st_head}{st_cursor}{st_tail}", self.prompt_suffix)?;
+
+        if selection_count > 0 {
+            write!(
+                f,
+                "  {}",
+                self.prompt_style.apply_to(format!(
+                    "[ {} branch{} selected ]",
+                    selection_count,
+                    if selection_count == 1 { "" } else { "es" }
+                ))
+            )?;
+        }
+
+        Ok(())
     }
 
     fn format_fuzzy_select_prompt_item(
@@ -107,6 +127,7 @@ impl Theme for ColorfulTheme {
         f: &mut dyn fmt::Write,
         text: &str,
         active: bool,
+        selected: bool,
         current: bool,
         highlight_matches: bool,
         matcher: &SkimMatcherV2,
@@ -121,6 +142,11 @@ impl Theme for ColorfulTheme {
                 self.inactive_item_prefix.clone()
             }
         )?;
+
+        // Selection tick
+        if selected {
+            write!(f, "{} ", self.selected_tick_style.apply_to("✔"))?;
+        }
 
         let base_style = if active {
             &self.active_item_style

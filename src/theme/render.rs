@@ -57,23 +57,27 @@ impl<'a> TermThemeRenderer<'a> {
         prompt: &str,
         search_term: &str,
         cursor_pos: usize,
+        selection_count: usize,
     ) -> Result {
         self.write_formatted_prompt(|this, buf| {
             this.theme
-                .format_fuzzy_select_prompt(buf, prompt, search_term, cursor_pos)
+                .format_fuzzy_select_prompt(buf, prompt, search_term, cursor_pos, selection_count)
         })
     }
 
+    #[allow(dead_code)]
     pub fn input_prompt_selection(&mut self, prompt: &str, sel: &str) -> Result {
         self.write_formatted_prompt(|this, buf| {
             this.theme.format_input_prompt_selection(buf, prompt, sel)
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn fuzzy_select_prompt_item(
         &mut self,
         text: &str,
         active: bool,
+        selected: bool,
         current: bool,
         highlight: bool,
         matcher: &SkimMatcherV2,
@@ -84,6 +88,7 @@ impl<'a> TermThemeRenderer<'a> {
                 buf,
                 text,
                 active,
+                selected,
                 current,
                 highlight,
                 matcher,

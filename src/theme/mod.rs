@@ -13,19 +13,23 @@ pub trait Theme {
         prompt: &str,
         search_term: &str,
         bytes_pos: usize,
+        selection_count: usize,
     ) -> fmt::Result;
 
+    #[allow(clippy::too_many_arguments)]
     fn format_fuzzy_select_prompt_item(
         &self,
         f: &mut dyn fmt::Write,
         text: &str,
         active: bool,
+        selected: bool,
         current: bool,
         highlight_matches: bool,
         matcher: &SkimMatcherV2,
         search_term: &str,
     ) -> fmt::Result;
 
+    #[allow(dead_code)]
     fn format_input_prompt_selection(
         &self,
         f: &mut dyn fmt::Write,
