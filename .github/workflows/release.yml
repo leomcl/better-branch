@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "v*.*.*" # Triggers when push a tag
+permissions:
+  contents: write
 
 jobs:
   build-mac:
