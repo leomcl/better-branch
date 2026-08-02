@@ -19,7 +19,15 @@ Better Branch provides an interactive fuzzy search interface for managing Git br
 
 ### 1. Install
 
-The easiest way to install is via Cargo:
+The easiest way to install is via Homebrew:
+
+```bash
+brew install leomcl/tap/better-branch
+```
+
+Or download a pre-built binary from the [GitHub Releases](https://github.com/leomcl/better-branch/releases) page.
+
+Or via Cargo:
 
 ```bash
 # Install directly from the source
