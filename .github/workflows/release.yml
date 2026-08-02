@@ -68,6 +68,7 @@ jobs:
             desc "An interactive, fuzzy-finding terminal UI for switching Git branches"
             homepage "https://github.com/leomcl/better-branch"
             version "${{ env.VERSION }}"
+            license "MIT"
 
             if Hardware::CPU.arm?
               url "https://github.com/leomcl/better-branch/releases/download/${{ env.VERSION }}/better-branch-aarch64-apple-darwin.tar.gz"
@@ -79,6 +80,10 @@ jobs:
 
             def install
               bin.install "better-branch"
+            end
+
+            test do
+              system "#{bin}/better-branch", "--version"
             end
           end
           EOF
