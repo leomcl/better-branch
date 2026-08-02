@@ -1,7 +1,7 @@
 use console::{Key, Term};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use std::{io, ops::Rem};
+use std::{collections::HashSet, io, ops::Rem};
 
 use crate::theme::render::TermThemeRenderer;
 use crate::theme::Theme;
@@ -17,11 +17,21 @@ enum Action {
     MoveDown,
     MoveLeft,
     MoveRight,
-    Select,
+    ToggleSelection,
+    SafeDelete,
+    ForceDelete,
+    ClearSearch,
+    ClearSelections,
     Backspace,
     Delete,
     InsertChar(char),
     None,
+}
+
+#[derive(Debug, Clone)]
+pub struct DeleteResult {
+    pub branches: Vec<String>,
+    pub force: bool,
 }
 
 #[derive(Clone)]
@@ -115,27 +125,11 @@ impl<'a> Menu<'a> {
     }
 
     #[inline]
-    pub fn interact(self) -> Result<usize> {
-        self.interact_on(&Term::stderr())
+    pub fn interact_for_delete(self) -> Result<Option<DeleteResult>> {
+        self._interact_for_delete_on(&Term::stderr())
     }
 
-    #[inline]
-    pub fn interact_opt(self) -> Result<Option<usize>> {
-        self.interact_on_opt(&Term::stderr())
-    }
-
-    #[inline]
-    pub fn interact_on(self, term: &Term) -> Result<usize> {
-        self._interact_on(term, false)?
-            .ok_or_else(|| io::Error::other("Quit not allowed in this case"))
-    }
-
-    #[inline]
-    pub fn interact_on_opt(self, term: &Term) -> Result<Option<usize>> {
-        self._interact_on(term, true)
-    }
-
-    fn _interact_on(self, term: &Term, allow_quit: bool) -> Result<Option<usize>> {
+    fn _interact_for_delete_on(self, term: &Term) -> Result<Option<DeleteResult>> {
         let mut cursor = self.initial_text.chars().count();
         let mut search_term = self.initial_text.to_owned();
 
@@ -160,6 +154,7 @@ impl<'a> Menu<'a> {
         term.hide_cursor()?;
 
         let mut vim_mode = false;
+        let mut selected: HashSet<String> = HashSet::new();
 
         loop {
             let mut byte_indices = search_term
@@ -170,7 +165,12 @@ impl<'a> Menu<'a> {
             byte_indices.push(search_term.len());
 
             render.clear()?;
-            render.fuzzy_select_prompt(self.prompt.as_str(), &search_term, byte_indices[cursor])?;
+            render.fuzzy_select_prompt(
+                self.prompt.as_str(),
+                &search_term,
+                byte_indices[cursor],
+                selected.len(),
+            )?;
 
             let mut filtered_list = self
                 .items
@@ -187,9 +187,11 @@ impl<'a> Menu<'a> {
                 .skip(starting_row)
                 .take(visible_term_rows)
             {
+                let is_selected = selected.contains(*item);
                 render.fuzzy_select_prompt_item(
                     item,
                     Some(idx) == sel,
+                    is_selected,
                     self.current_branch.as_ref().map(|b| b == *item).unwrap_or(false),
                     self.highlight_matches,
                     &matcher,
@@ -202,10 +204,11 @@ impl<'a> Menu<'a> {
             match self.classify_action(
                 &key,
                 vim_mode,
-                allow_quit,
                 cursor,
                 byte_indices.len(),
                 filtered_list.is_empty(),
+                &search_term,
+                &selected,
             ) {
                 Action::VimEscape => {
                     self.handle_vim_mode_escape(&mut vim_mode);
@@ -240,10 +243,42 @@ impl<'a> Menu<'a> {
                 Action::MoveRight => {
                     self.handle_move_right(term, &mut cursor)?;
                 }
-                Action::Select => {
+                Action::ToggleSelection => {
                     if let Some(sel_idx) = sel {
-                        return self.handle_select(term, &mut render, &filtered_list, sel_idx);
+                        if let Some((branch_name, _)) = filtered_list.get(sel_idx) {
+                            let branch = branch_name.to_string();
+                            if selected.contains(&branch) {
+                                selected.remove(&branch);
+                            } else {
+                                selected.insert(branch);
+                            }
+                        }
                     }
+                }
+                Action::SafeDelete => {
+                    if !selected.is_empty() {
+                        let branches: Vec<String> = selected.iter().cloned().collect();
+                        if self.confirm_delete(term, &mut render, &branches, false)? {
+                            return Ok(Some(DeleteResult { branches, force: false }));
+                        }
+                    }
+                }
+                Action::ForceDelete => {
+                    if !selected.is_empty() {
+                        let branches: Vec<String> = selected.iter().cloned().collect();
+                        if self.confirm_delete(term, &mut render, &branches, true)? {
+                            return Ok(Some(DeleteResult { branches, force: true }));
+                        }
+                    }
+                }
+                Action::ClearSearch => {
+                    search_term.clear();
+                    cursor = 0;
+                    sel = self.default;
+                    starting_row = 0;
+                }
+                Action::ClearSelections => {
+                    selected.clear();
                 }
                 Action::Backspace => {
                     self.handle_backspace(term, &mut cursor, &mut search_term, &byte_indices)?;
@@ -269,11 +304,48 @@ impl<'a> Menu<'a> {
         }
     }
 
+    fn confirm_delete(
+        &self,
+        term: &Term,
+        render: &mut TermThemeRenderer,
+        branches: &[String],
+        force: bool,
+    ) -> Result<bool> {
+        let action = if force { "Force delete" } else { "Delete" };
+        let count = branches.len();
+        let prompt = format!(
+            "{} {} selected branch{}? (y/N)",
+            action,
+            count,
+            if count == 1 { "" } else { "s" }
+        );
+
+        // Hide the list temporarily and show confirmation
+        render.clear()?;
+        term.write_line(&prompt)?;
+        term.flush()?;
+
+        loop {
+            let key = term.read_key()?;
+            match key {
+                Key::Char('y' | 'Y') => {
+                    term.clear_last_lines(1)?;
+                    return Ok(true);
+                }
+                Key::Enter | Key::Char('n' | 'N') | Key::Escape => {
+                    term.clear_last_lines(1)?;
+                    return Ok(false);
+                }
+                _ => {}
+            }
+        }
+    }
+
     fn handle_vim_mode_escape(&self, vim_mode: &mut bool) {
         *vim_mode = true;
     }
 
-    fn handle_quit(&self, term: &Term, render: &mut TermThemeRenderer) -> Result<Option<usize>> {
+    fn handle_quit(&self, term: &Term, render: &mut TermThemeRenderer) -> Result<Option<DeleteResult>> {
         if self.clear {
             render.clear()?;
             term.flush()?;
@@ -342,28 +414,6 @@ impl<'a> Menu<'a> {
         Ok(())
     }
 
-    fn handle_select(
-        &self,
-        term: &Term,
-        render: &mut TermThemeRenderer,
-        filtered_list: &[(&String, i64)],
-        sel: usize,
-    ) -> Result<Option<usize>> {
-        if self.clear {
-            render.clear()?;
-        }
-
-        if self.report {
-            render.input_prompt_selection(self.prompt.as_str(), filtered_list[sel].0)?;
-        }
-
-        let sel_string = filtered_list[sel].0;
-        let sel_string_pos_in_items = self.items.iter().position(|item| item.eq(sel_string));
-
-        term.show_cursor()?;
-        Ok(sel_string_pos_in_items)
-    }
-
     fn handle_backspace(
         &self,
         term: &Term,
@@ -389,6 +439,7 @@ impl<'a> Menu<'a> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn handle_char(
         &self,
         term: &Term,
@@ -407,20 +458,24 @@ impl<'a> Menu<'a> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn classify_action(
         &self,
         key: &Key,
         vim_mode: bool,
-        allow_quit: bool,
         cursor: usize,
         byte_indices_len: usize,
         filtered_list_is_empty: bool,
+        search_term: &str,
+        selected: &HashSet<String>,
     ) -> Action {
         match (key, vim_mode) {
             (Key::Escape, false) if self.enable_vim_mode => Action::VimEscape,
 
-            (Key::Escape, false) if allow_quit => Action::Quit,
-            (Key::Char('q'), true) if allow_quit => Action::Quit,
+            (Key::Escape, false) if !search_term.is_empty() => Action::ClearSearch,
+            (Key::Escape, false) if !selected.is_empty() => Action::ClearSelections,
+            (Key::Escape, false) => Action::Quit,
+            (Key::Char('q'), true) => Action::Quit,
 
             (Key::Char('i' | 'a'), true) => Action::VimInsert,
 
@@ -438,7 +493,11 @@ impl<'a> Menu<'a> {
             (Key::ArrowRight, _) if cursor < byte_indices_len - 1 => Action::MoveRight,
             (Key::Char('l'), true) if cursor < byte_indices_len - 1 => Action::MoveRight,
 
-            (Key::Enter, _) if !filtered_list_is_empty => Action::Select,
+            (Key::Char(' '), _) if !filtered_list_is_empty => Action::ToggleSelection,
+
+            (Key::Char('\x04'), _) if !selected.is_empty() => Action::SafeDelete,
+
+            (Key::Char('\x06') | Key::Char('\x18'), _) if !selected.is_empty() => Action::ForceDelete,
 
             (Key::Backspace, _) if cursor > 0 => Action::Backspace,
             (Key::Del, _) if cursor < byte_indices_len - 1 => Action::Delete,
