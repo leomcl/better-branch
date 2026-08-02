@@ -1,4 +1,3 @@
-// Most code in here taken from https://github.com/console-rs/dialoguer
 use console::{Key, Term};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
@@ -192,7 +191,14 @@ impl<'a> Menu<'a> {
             term.flush()?;
 
             let key = term.read_key()?;
-            match self.classify_action(&key, vim_mode, allow_quit, cursor, byte_indices.len(), filtered_list.is_empty()) {
+            match self.classify_action(
+                &key,
+                vim_mode,
+                allow_quit,
+                cursor,
+                byte_indices.len(),
+                filtered_list.is_empty(),
+            ) {
                 Action::VimEscape => {
                     self.handle_vim_mode_escape(&mut vim_mode);
                 }
@@ -259,11 +265,7 @@ impl<'a> Menu<'a> {
         *vim_mode = true;
     }
 
-    fn handle_quit(
-        &self,
-        term: &Term,
-        render: &mut TermThemeRenderer,
-    ) -> Result<Option<usize>> {
+    fn handle_quit(&self, term: &Term, render: &mut TermThemeRenderer) -> Result<Option<usize>> {
         if self.clear {
             render.clear()?;
             term.flush()?;

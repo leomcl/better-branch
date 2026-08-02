@@ -20,6 +20,7 @@ pub trait Theme {
         f: &mut dyn fmt::Write,
         text: &str,
         active: bool,
+        current: bool,
         highlight_matches: bool,
         matcher: &SkimMatcherV2,
         search_term: &str,
