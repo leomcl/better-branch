@@ -1,10 +1,44 @@
-// Most code in here taken from https://github.com/console-rs/dialoguer
-
 use crate::theme::Theme;
 use console::{style, Style};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use std::fmt;
+
+fn write_item_text(
+    f: &mut dyn fmt::Write,
+    text: &str,
+    active: bool,
+    highlight_matches: bool,
+    matcher: &SkimMatcherV2,
+    search_term: &str,
+    highlight_style: &Style,
+    base_style: &Style,
+) -> fmt::Result {
+    if highlight_matches {
+        if let Some((_score, indices)) = matcher.fuzzy_indices(text, search_term) {
+            for (idx, c) in text.chars().enumerate() {
+                if indices.contains(&idx) {
+                    if active {
+                        write!(f, "{}", base_style.apply_to(highlight_style.apply_to(c)))?;
+                    } else {
+                        write!(f, "{}", highlight_style.apply_to(c))?;
+                    }
+                } else if active {
+                    write!(f, "{}", base_style.apply_to(c))?;
+                } else {
+                    write!(f, "{}", c)?;
+                }
+            }
+            return Ok(());
+        }
+    }
+
+    if active {
+        write!(f, "{}", base_style.apply_to(text))
+    } else {
+        write!(f, "{}", text)
+    }
+}
 
 pub struct ColorfulTheme {
     pub prompt_prefix: String,
@@ -13,6 +47,7 @@ pub struct ColorfulTheme {
     pub active_item_prefix: String,
     pub inactive_item_prefix: String,
     pub active_item_style: Style,
+    pub current_branch_style: Style,
     pub fuzzy_match_highlight_style: Style,
     pub fuzzy_cursor_style: Style,
     pub success_prefix: String,
@@ -32,6 +67,7 @@ impl Default for ColorfulTheme {
             active_item_prefix: style("❯".to_string()).green().for_stderr().to_string(),
             inactive_item_prefix: " ".to_string(),
             active_item_style: Style::new().for_stderr().cyan(),
+            current_branch_style: Style::new().for_stderr().yellow(),
             fuzzy_match_highlight_style: Style::new().for_stderr().bold(),
             fuzzy_cursor_style: Style::new().for_stderr().black().on_white(),
             success_prefix: style("✔".to_string()).green().for_stderr().to_string(),
@@ -71,6 +107,7 @@ impl Theme for ColorfulTheme {
         f: &mut dyn fmt::Write,
         text: &str,
         active: bool,
+        current: bool,
         highlight_matches: bool,
         matcher: &SkimMatcherV2,
         search_term: &str,
@@ -79,42 +116,39 @@ impl Theme for ColorfulTheme {
             f,
             "{} ",
             if active {
-                &self.active_item_prefix
+                self.active_item_prefix.clone()
             } else {
-                &self.inactive_item_prefix
+                self.inactive_item_prefix.clone()
             }
         )?;
 
-        if highlight_matches {
-            if let Some((_score, indices)) = matcher.fuzzy_indices(text, search_term) {
-                for (idx, c) in text.chars().enumerate() {
-                    if indices.contains(&idx) {
-                        if active {
-                            write!(
-                                f,
-                                "{}",
-                                self.active_item_style
-                                    .apply_to(self.fuzzy_match_highlight_style.apply_to(c))
-                            )?;
-                        } else {
-                            write!(f, "{}", self.fuzzy_match_highlight_style.apply_to(c))?;
-                        }
-                    } else if active {
-                        write!(f, "{}", self.active_item_style.apply_to(c))?;
-                    } else {
-                        write!(f, "{}", c)?;
-                    }
-                }
-
-                return Ok(());
-            }
-        }
-
-        if active {
-            write!(f, "{}", self.active_item_style.apply_to(text))
+        let base_style = if active {
+            &self.active_item_style
+        } else if current {
+            &self.current_branch_style
         } else {
-            write!(f, "{}", text)
-        }
+            return write_item_text(
+                f,
+                text,
+                false,
+                highlight_matches,
+                matcher,
+                search_term,
+                &self.fuzzy_match_highlight_style,
+                &Style::new(),
+            );
+        };
+
+        write_item_text(
+            f,
+            text,
+            true,
+            highlight_matches,
+            matcher,
+            search_term,
+            &self.fuzzy_match_highlight_style,
+            base_style,
+        )
     }
 
     fn format_input_prompt_selection(

@@ -1,4 +1,3 @@
-// Most code in here taken from https://github.com/console-rs/dialoguer
 use console::{Key, Term};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
@@ -33,6 +32,7 @@ pub struct Menu<'a> {
     report: bool,
     clear: bool,
     highlight_matches: bool,
+    current_branch: Option<String>,
     enable_vim_mode: bool,
     max_length: Option<usize>,
     theme: &'a dyn Theme,
@@ -49,6 +49,7 @@ impl<'a> Menu<'a> {
             report: true,
             clear: true,
             highlight_matches: true,
+            current_branch: None,
             enable_vim_mode: false,
             max_length: None,
             theme,
@@ -95,6 +96,11 @@ impl<'a> Menu<'a> {
 
     pub fn highlight_matches(mut self, val: bool) -> Self {
         self.highlight_matches = val;
+        self
+    }
+
+    pub fn current_branch(mut self, val: String) -> Self {
+        self.current_branch = Some(val);
         self
     }
 
@@ -184,6 +190,7 @@ impl<'a> Menu<'a> {
                 render.fuzzy_select_prompt_item(
                     item,
                     Some(idx) == sel,
+                    self.current_branch.as_ref().map(|b| b == *item).unwrap_or(false),
                     self.highlight_matches,
                     &matcher,
                     &search_term,
@@ -192,7 +199,14 @@ impl<'a> Menu<'a> {
             term.flush()?;
 
             let key = term.read_key()?;
-            match self.classify_action(&key, vim_mode, allow_quit, cursor, byte_indices.len(), filtered_list.is_empty()) {
+            match self.classify_action(
+                &key,
+                vim_mode,
+                allow_quit,
+                cursor,
+                byte_indices.len(),
+                filtered_list.is_empty(),
+            ) {
                 Action::VimEscape => {
                     self.handle_vim_mode_escape(&mut vim_mode);
                 }
@@ -259,11 +273,7 @@ impl<'a> Menu<'a> {
         *vim_mode = true;
     }
 
-    fn handle_quit(
-        &self,
-        term: &Term,
-        render: &mut TermThemeRenderer,
-    ) -> Result<Option<usize>> {
+    fn handle_quit(&self, term: &Term, render: &mut TermThemeRenderer) -> Result<Option<usize>> {
         if self.clear {
             render.clear()?;
             term.flush()?;

@@ -28,9 +28,22 @@ fn main() {
         return;
     }
 
+    let current_branch = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .expect("Failed to get current branch");
+
+    if !current_branch.status.success() {
+        eprintln!("Error getting current branch");
+        exit(1);
+    }
+
+    let current_branch = String::from_utf8_lossy(&current_branch.stdout).trim().to_string();
+
     let selection = Menu::with_theme(&ColorfulTheme::default())
         .default(0)
         .items(&branches)
+        .current_branch(current_branch)
         .vim_mode(true)
         .interact()
         .unwrap();
