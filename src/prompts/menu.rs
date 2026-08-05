@@ -25,6 +25,7 @@ enum Action {
     Backspace,
     Delete,
     InsertChar(char),
+    Checkout,
     None,
 }
 
@@ -32,6 +33,12 @@ enum Action {
 pub struct DeleteResult {
     pub branches: Vec<String>,
     pub force: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum MenuResult {
+    Checkout(String),
+    Delete(DeleteResult),
 }
 
 #[derive(Clone)]
@@ -125,11 +132,11 @@ impl<'a> Menu<'a> {
     }
 
     #[inline]
-    pub fn interact_for_delete(self) -> Result<Option<DeleteResult>> {
-        self._interact_for_delete_on(&Term::stderr())
+    pub fn interact(self) -> Result<Option<MenuResult>> {
+        self._interact_on(&Term::stderr())
     }
 
-    fn _interact_for_delete_on(self, term: &Term) -> Result<Option<DeleteResult>> {
+    fn _interact_on(self, term: &Term) -> Result<Option<MenuResult>> {
         let mut cursor = self.initial_text.chars().count();
         let mut search_term = self.initial_text.to_owned();
 
@@ -255,11 +262,23 @@ impl<'a> Menu<'a> {
                         }
                     }
                 }
+                Action::Checkout => {
+                    if let Some(sel_idx) = sel {
+                        if let Some((branch_name, _)) = filtered_list.get(sel_idx) {
+                            if self.clear {
+                                render.clear()?;
+                                term.flush()?;
+                            }
+                            term.show_cursor()?;
+                            return Ok(Some(MenuResult::Checkout(branch_name.to_string())));
+                        }
+                    }
+                }
                 Action::SafeDelete => {
                     if !selected.is_empty() {
                         let branches: Vec<String> = selected.iter().cloned().collect();
                         if self.confirm_delete(term, &mut render, &branches, false)? {
-                            return Ok(Some(DeleteResult { branches, force: false }));
+                            return Ok(Some(MenuResult::Delete(DeleteResult { branches, force: false })));
                         }
                     }
                 }
@@ -267,7 +286,7 @@ impl<'a> Menu<'a> {
                     if !selected.is_empty() {
                         let branches: Vec<String> = selected.iter().cloned().collect();
                         if self.confirm_delete(term, &mut render, &branches, true)? {
-                            return Ok(Some(DeleteResult { branches, force: true }));
+                            return Ok(Some(MenuResult::Delete(DeleteResult { branches, force: true })));
                         }
                     }
                 }
@@ -345,7 +364,7 @@ impl<'a> Menu<'a> {
         *vim_mode = true;
     }
 
-    fn handle_quit(&self, term: &Term, render: &mut TermThemeRenderer) -> Result<Option<DeleteResult>> {
+    fn handle_quit(&self, term: &Term, render: &mut TermThemeRenderer) -> Result<Option<MenuResult>> {
         if self.clear {
             render.clear()?;
             term.flush()?;
@@ -493,7 +512,9 @@ impl<'a> Menu<'a> {
             (Key::ArrowRight, _) if cursor < byte_indices_len - 1 => Action::MoveRight,
             (Key::Char('l'), true) if cursor < byte_indices_len - 1 => Action::MoveRight,
 
-            (Key::Char(' '), _) if !filtered_list_is_empty => Action::ToggleSelection,
+            (Key::Char(' ') | Key::Char('\0'), _) if !filtered_list_is_empty => Action::ToggleSelection,
+
+            (Key::Enter, _) if !filtered_list_is_empty => Action::Checkout,
 
             (Key::Char('\x04'), _) if !selected.is_empty() => Action::SafeDelete,
 
