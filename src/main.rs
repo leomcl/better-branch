@@ -1,7 +1,7 @@
 mod prompts;
 mod theme;
 
-use crate::prompts::Menu;
+use crate::prompts::{Menu, MenuResult};
 use crate::theme::colorful::ColorfulTheme;
 use console::{Key, Term};
 use std::process::{exit, Command};
@@ -93,6 +93,19 @@ fn prompt_force_delete_unmerged(term: &Term, unmerged: &[String]) -> bool {
     }
 }
 
+fn checkout_branch(branch: &str) -> Result<(), String> {
+    let status = Command::new("git")
+        .args(["checkout", branch])
+        .status()
+        .map_err(|e| format!("Failed to checkout branch: {}", e))?;
+
+    if !status.success() {
+        return Err(format!("Failed to checkout branch: {}", branch));
+    }
+
+    Ok(())
+}
+
 fn main() {
     let branches = match get_branches() {
         Ok(b) => b,
@@ -120,68 +133,25 @@ fn main() {
         .items(&branches)
         .current_branch(current_branch.clone())
         .vim_mode(true)
-        .interact_for_delete();
+        .interact();
 
-    let delete_result = match result {
-        Ok(Some(r)) => r,
-        Ok(None) => return,
-        Err(e) => {
-            eprintln!("Menu error: {}", e);
-            exit(1);
-        }
-    };
-
-    let term = Term::stderr();
-
-    if delete_result.force {
-        // Force delete all selected branches
-        for branch in &delete_result.branches {
-            if branch == &current_branch {
-                eprintln!("Cannot delete current branch: {}", branch);
-                continue;
-            }
-            if is_protected_branch(branch) {
-                eprintln!("Skipping protected branch: {}", branch);
-                continue;
-            }
-            match delete_branch(branch, true) {
-                Ok(()) => println!("Force deleted: {}", branch),
-                Err(e) => eprintln!("Failed to force delete {}: {}", branch, e),
+    match result {
+        Ok(Some(MenuResult::Checkout(branch))) => {
+            if let Err(e) = checkout_branch(&branch) {
+                eprintln!("{}", e);
+                exit(1);
             }
         }
-    } else {
-        // Safe delete - track unmerged failures
-        let mut unmerged = Vec::new();
-        let mut deleted = Vec::new();
+        Ok(Some(MenuResult::Delete(delete_result))) => {
+            let term = Term::stderr();
 
-        for branch in &delete_result.branches {
-            if branch == &current_branch {
-                eprintln!("Cannot delete current branch: {}", branch);
-                continue;
-            }
-            if is_protected_branch(branch) {
-                eprintln!("Skipping protected branch: {}", branch);
-                continue;
-            }
-            match delete_branch(branch, false) {
-                Ok(()) => deleted.push(branch.clone()),
-                Err(e) => {
-                    if e.contains("not fully merged") || e.contains("unmerged") {
-                        unmerged.push(branch.clone());
-                    } else {
-                        eprintln!("Failed to delete {}: {}", branch, e);
+            if delete_result.force {
+                // Force delete all selected branches
+                for branch in &delete_result.branches {
+                    if branch == &current_branch {
+                        eprintln!("Cannot delete current branch: {}", branch);
+                        continue;
                     }
-                }
-            }
-        }
-
-        for branch in &deleted {
-            println!("Deleted: {}", branch);
-        }
-
-        if !unmerged.is_empty() {
-            if prompt_force_delete_unmerged(&term, &unmerged) {
-                for branch in &unmerged {
                     if is_protected_branch(branch) {
                         eprintln!("Skipping protected branch: {}", branch);
                         continue;
@@ -192,8 +162,57 @@ fn main() {
                     }
                 }
             } else {
-                println!("Skipped {} unmerged branch(es).", unmerged.len());
+                // Safe delete - track unmerged failures
+                let mut unmerged = Vec::new();
+                let mut deleted = Vec::new();
+
+                for branch in &delete_result.branches {
+                    if branch == &current_branch {
+                        eprintln!("Cannot delete current branch: {}", branch);
+                        continue;
+                    }
+                    if is_protected_branch(branch) {
+                        eprintln!("Skipping protected branch: {}", branch);
+                        continue;
+                    }
+                    match delete_branch(branch, false) {
+                        Ok(()) => deleted.push(branch.clone()),
+                        Err(e) => {
+                            if e.contains("not fully merged") || e.contains("unmerged") {
+                                unmerged.push(branch.clone());
+                            } else {
+                                eprintln!("Failed to delete {}: {}", branch, e);
+                            }
+                        }
+                    }
+                }
+
+                for branch in &deleted {
+                    println!("Deleted: {}", branch);
+                }
+
+                if !unmerged.is_empty() {
+                    if prompt_force_delete_unmerged(&term, &unmerged) {
+                        for branch in &unmerged {
+                            if is_protected_branch(branch) {
+                                eprintln!("Skipping protected branch: {}", branch);
+                                continue;
+                            }
+                            match delete_branch(branch, true) {
+                                Ok(()) => println!("Force deleted: {}", branch),
+                                Err(e) => eprintln!("Failed to force delete {}: {}", branch, e),
+                            }
+                        }
+                    } else {
+                        println!("Skipped {} unmerged branch(es).", unmerged.len());
+                    }
+                }
             }
+        }
+        Ok(None) => return,
+        Err(e) => {
+            eprintln!("Menu error: {}", e);
+            exit(1);
         }
     }
 }
