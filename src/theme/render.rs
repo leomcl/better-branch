@@ -60,8 +60,13 @@ impl<'a> TermThemeRenderer<'a> {
         selection_count: usize,
     ) -> Result {
         self.write_formatted_prompt(|this, buf| {
-            this.theme
-                .format_fuzzy_select_prompt(buf, prompt, search_term, cursor_pos, selection_count)
+            this.theme.format_fuzzy_select_prompt(
+                buf,
+                prompt,
+                search_term,
+                cursor_pos,
+                selection_count,
+            )
         })
     }
 

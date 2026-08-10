@@ -199,7 +199,10 @@ impl<'a> Menu<'a> {
                     item,
                     Some(idx) == sel,
                     is_selected,
-                    self.current_branch.as_ref().map(|b| b == *item).unwrap_or(false),
+                    self.current_branch
+                        .as_ref()
+                        .map(|b| b == *item)
+                        .unwrap_or(false),
                     self.highlight_matches,
                     &matcher,
                     &search_term,
@@ -278,7 +281,10 @@ impl<'a> Menu<'a> {
                     if !selected.is_empty() {
                         let branches: Vec<String> = selected.iter().cloned().collect();
                         if self.confirm_delete(term, &mut render, &branches, false)? {
-                            return Ok(Some(MenuResult::Delete(DeleteResult { branches, force: false })));
+                            return Ok(Some(MenuResult::Delete(DeleteResult {
+                                branches,
+                                force: false,
+                            })));
                         }
                     }
                 }
@@ -286,7 +292,10 @@ impl<'a> Menu<'a> {
                     if !selected.is_empty() {
                         let branches: Vec<String> = selected.iter().cloned().collect();
                         if self.confirm_delete(term, &mut render, &branches, true)? {
-                            return Ok(Some(MenuResult::Delete(DeleteResult { branches, force: true })));
+                            return Ok(Some(MenuResult::Delete(DeleteResult {
+                                branches,
+                                force: true,
+                            })));
                         }
                     }
                 }
@@ -364,7 +373,11 @@ impl<'a> Menu<'a> {
         *vim_mode = true;
     }
 
-    fn handle_quit(&self, term: &Term, render: &mut TermThemeRenderer) -> Result<Option<MenuResult>> {
+    fn handle_quit(
+        &self,
+        term: &Term,
+        render: &mut TermThemeRenderer,
+    ) -> Result<Option<MenuResult>> {
         if self.clear {
             render.clear()?;
             term.flush()?;
@@ -512,13 +525,17 @@ impl<'a> Menu<'a> {
             (Key::ArrowRight, _) if cursor < byte_indices_len - 1 => Action::MoveRight,
             (Key::Char('l'), true) if cursor < byte_indices_len - 1 => Action::MoveRight,
 
-            (Key::Char(' ') | Key::Char('\0'), _) if !filtered_list_is_empty => Action::ToggleSelection,
+            (Key::Char(' ') | Key::Char('\0'), _) if !filtered_list_is_empty => {
+                Action::ToggleSelection
+            }
 
             (Key::Enter, _) if !filtered_list_is_empty => Action::Checkout,
 
             (Key::Char('\x04'), _) if !selected.is_empty() => Action::SafeDelete,
 
-            (Key::Char('\x06') | Key::Char('\x18'), _) if !selected.is_empty() => Action::ForceDelete,
+            (Key::Char('\x06') | Key::Char('\x18'), _) if !selected.is_empty() => {
+                Action::ForceDelete
+            }
 
             (Key::Backspace, _) if cursor > 0 => Action::Backspace,
             (Key::Del, _) if cursor < byte_indices_len - 1 => Action::Delete,
@@ -535,6 +552,7 @@ mod tests {
     use super::*;
     use crate::theme::colorful::ColorfulTheme;
 
+    #[allow(clippy::too_many_arguments)]
     fn classify(
         enable_vim_mode: bool,
         key: Key,
@@ -564,7 +582,16 @@ mod tests {
     #[test]
     fn escape_in_vim_mode_enters_normal_mode() {
         assert_eq!(
-            classify(VIM_ENABLED, Key::Escape, false, 0, 1, false, "", &HashSet::new()),
+            classify(
+                VIM_ENABLED,
+                Key::Escape,
+                false,
+                0,
+                1,
+                false,
+                "",
+                &HashSet::new()
+            ),
             Action::VimEscape
         );
     }
@@ -572,7 +599,16 @@ mod tests {
     #[test]
     fn escape_clears_search_first() {
         assert_eq!(
-            classify(VIM_DISABLED, Key::Escape, false, 3, 4, false, "feat", &HashSet::new()),
+            classify(
+                VIM_DISABLED,
+                Key::Escape,
+                false,
+                3,
+                4,
+                false,
+                "feat",
+                &HashSet::new()
+            ),
             Action::ClearSearch
         );
     }
@@ -589,7 +625,16 @@ mod tests {
     #[test]
     fn escape_quits_when_clean() {
         assert_eq!(
-            classify(VIM_DISABLED, Key::Escape, false, 0, 1, false, "", &HashSet::new()),
+            classify(
+                VIM_DISABLED,
+                Key::Escape,
+                false,
+                0,
+                1,
+                false,
+                "",
+                &HashSet::new()
+            ),
             Action::Quit
         );
     }
@@ -597,7 +642,16 @@ mod tests {
     #[test]
     fn vim_quit_key() {
         assert_eq!(
-            classify(VIM_ENABLED, Key::Char('q'), true, 0, 1, false, "", &HashSet::new()),
+            classify(
+                VIM_ENABLED,
+                Key::Char('q'),
+                true,
+                0,
+                1,
+                false,
+                "",
+                &HashSet::new()
+            ),
             Action::Quit
         );
     }
@@ -606,7 +660,16 @@ mod tests {
     fn vim_insert_keys() {
         for key in ['i', 'a'] {
             assert_eq!(
-                classify(VIM_ENABLED, Key::Char(key), true, 0, 1, false, "", &HashSet::new()),
+                classify(
+                    VIM_ENABLED,
+                    Key::Char(key),
+                    true,
+                    0,
+                    1,
+                    false,
+                    "",
+                    &HashSet::new()
+                ),
                 Action::VimInsert,
                 "vim key {:?} should enter insert mode",
                 key
@@ -617,19 +680,55 @@ mod tests {
     #[test]
     fn vim_movement_keys() {
         assert_eq!(
-            classify(VIM_ENABLED, Key::Char('k'), true, 0, 1, false, "", &HashSet::new()),
+            classify(
+                VIM_ENABLED,
+                Key::Char('k'),
+                true,
+                0,
+                1,
+                false,
+                "",
+                &HashSet::new()
+            ),
             Action::MoveUp
         );
         assert_eq!(
-            classify(VIM_ENABLED, Key::Char('j'), true, 0, 1, false, "", &HashSet::new()),
+            classify(
+                VIM_ENABLED,
+                Key::Char('j'),
+                true,
+                0,
+                1,
+                false,
+                "",
+                &HashSet::new()
+            ),
             Action::MoveDown
         );
         assert_eq!(
-            classify(VIM_DISABLED, Key::ArrowUp, false, 0, 1, false, "", &HashSet::new()),
+            classify(
+                VIM_DISABLED,
+                Key::ArrowUp,
+                false,
+                0,
+                1,
+                false,
+                "",
+                &HashSet::new()
+            ),
             Action::MoveUp
         );
         assert_eq!(
-            classify(VIM_DISABLED, Key::ArrowDown, false, 0, 1, false, "", &HashSet::new()),
+            classify(
+                VIM_DISABLED,
+                Key::ArrowDown,
+                false,
+                0,
+                1,
+                false,
+                "",
+                &HashSet::new()
+            ),
             Action::MoveDown
         );
     }
@@ -637,11 +736,29 @@ mod tests {
     #[test]
     fn ctrl_p_n_move_selection() {
         assert_eq!(
-            classify(VIM_DISABLED, Key::Char('\x10'), false, 0, 1, false, "", &HashSet::new()),
+            classify(
+                VIM_DISABLED,
+                Key::Char('\x10'),
+                false,
+                0,
+                1,
+                false,
+                "",
+                &HashSet::new()
+            ),
             Action::MoveUp
         );
         assert_eq!(
-            classify(VIM_DISABLED, Key::Char('\x0e'), false, 0, 1, false, "", &HashSet::new()),
+            classify(
+                VIM_DISABLED,
+                Key::Char('\x0e'),
+                false,
+                0,
+                1,
+                false,
+                "",
+                &HashSet::new()
+            ),
             Action::MoveDown
         );
     }
@@ -649,7 +766,16 @@ mod tests {
     #[test]
     fn space_toggles_selection() {
         assert_eq!(
-            classify(VIM_DISABLED, Key::Char(' '), false, 0, 1, false, "", &HashSet::new()),
+            classify(
+                VIM_DISABLED,
+                Key::Char(' '),
+                false,
+                0,
+                1,
+                false,
+                "",
+                &HashSet::new()
+            ),
             Action::ToggleSelection
         );
     }
@@ -657,7 +783,16 @@ mod tests {
     #[test]
     fn enter_checks_out() {
         assert_eq!(
-            classify(VIM_DISABLED, Key::Enter, false, 0, 1, false, "", &HashSet::new()),
+            classify(
+                VIM_DISABLED,
+                Key::Enter,
+                false,
+                0,
+                1,
+                false,
+                "",
+                &HashSet::new()
+            ),
             Action::Checkout
         );
     }
@@ -666,21 +801,57 @@ mod tests {
     fn delete_keys_require_selection() {
         let empty = HashSet::new();
         assert_eq!(
-            classify(VIM_DISABLED, Key::Char('\x04'), false, 0, 1, false, "", &empty),
+            classify(
+                VIM_DISABLED,
+                Key::Char('\x04'),
+                false,
+                0,
+                1,
+                false,
+                "",
+                &empty
+            ),
             Action::None
         );
 
         let selected = HashSet::from(["feature/foo".to_string()]);
         assert_eq!(
-            classify(VIM_DISABLED, Key::Char('\x04'), false, 0, 1, false, "", &selected),
+            classify(
+                VIM_DISABLED,
+                Key::Char('\x04'),
+                false,
+                0,
+                1,
+                false,
+                "",
+                &selected
+            ),
             Action::SafeDelete
         );
         assert_eq!(
-            classify(VIM_DISABLED, Key::Char('\x06'), false, 0, 1, false, "", &selected),
+            classify(
+                VIM_DISABLED,
+                Key::Char('\x06'),
+                false,
+                0,
+                1,
+                false,
+                "",
+                &selected
+            ),
             Action::ForceDelete
         );
         assert_eq!(
-            classify(VIM_DISABLED, Key::Char('\x18'), false, 0, 1, false, "", &selected),
+            classify(
+                VIM_DISABLED,
+                Key::Char('\x18'),
+                false,
+                0,
+                1,
+                false,
+                "",
+                &selected
+            ),
             Action::ForceDelete
         );
     }
@@ -688,7 +859,16 @@ mod tests {
     #[test]
     fn typing_inserts_characters() {
         assert_eq!(
-            classify(VIM_DISABLED, Key::Char('f'), false, 0, 1, false, "", &HashSet::new()),
+            classify(
+                VIM_DISABLED,
+                Key::Char('f'),
+                false,
+                0,
+                1,
+                false,
+                "",
+                &HashSet::new()
+            ),
             Action::InsertChar('f')
         );
     }
@@ -697,11 +877,29 @@ mod tests {
     fn backspace_requires_cursor_not_at_start() {
         let empty = HashSet::new();
         assert_eq!(
-            classify(VIM_DISABLED, Key::Backspace, false, 0, 2, false, "a", &empty),
+            classify(
+                VIM_DISABLED,
+                Key::Backspace,
+                false,
+                0,
+                2,
+                false,
+                "a",
+                &empty
+            ),
             Action::None
         );
         assert_eq!(
-            classify(VIM_DISABLED, Key::Backspace, false, 1, 2, false, "a", &empty),
+            classify(
+                VIM_DISABLED,
+                Key::Backspace,
+                false,
+                1,
+                2,
+                false,
+                "a",
+                &empty
+            ),
             Action::Backspace
         );
     }
@@ -710,15 +908,42 @@ mod tests {
     fn arrows_respect_cursor_bounds() {
         let empty = HashSet::new();
         assert_eq!(
-            classify(VIM_DISABLED, Key::ArrowLeft, false, 0, 2, false, "a", &empty),
+            classify(
+                VIM_DISABLED,
+                Key::ArrowLeft,
+                false,
+                0,
+                2,
+                false,
+                "a",
+                &empty
+            ),
             Action::None
         );
         assert_eq!(
-            classify(VIM_DISABLED, Key::ArrowRight, false, 2, 2, false, "a", &empty),
+            classify(
+                VIM_DISABLED,
+                Key::ArrowRight,
+                false,
+                2,
+                2,
+                false,
+                "a",
+                &empty
+            ),
             Action::None
         );
         assert_eq!(
-            classify(VIM_DISABLED, Key::ArrowRight, false, 0, 2, false, "a", &empty),
+            classify(
+                VIM_DISABLED,
+                Key::ArrowRight,
+                false,
+                0,
+                2,
+                false,
+                "a",
+                &empty
+            ),
             Action::MoveRight
         );
     }
@@ -726,11 +951,29 @@ mod tests {
     #[test]
     fn no_navigation_on_empty_list() {
         assert_eq!(
-            classify(VIM_DISABLED, Key::ArrowUp, false, 0, 1, true, "", &HashSet::new()),
+            classify(
+                VIM_DISABLED,
+                Key::ArrowUp,
+                false,
+                0,
+                1,
+                true,
+                "",
+                &HashSet::new()
+            ),
             Action::None
         );
         assert_eq!(
-            classify(VIM_DISABLED, Key::ArrowDown, false, 0, 1, true, "", &HashSet::new()),
+            classify(
+                VIM_DISABLED,
+                Key::ArrowDown,
+                false,
+                0,
+                1,
+                true,
+                "",
+                &HashSet::new()
+            ),
             Action::None
         );
     }
@@ -738,7 +981,16 @@ mod tests {
     #[test]
     fn unknown_keys_do_nothing() {
         assert_eq!(
-            classify(VIM_DISABLED, Key::Char('\x1b'), false, 0, 1, false, "", &HashSet::new()),
+            classify(
+                VIM_DISABLED,
+                Key::Char('\x1b'),
+                false,
+                0,
+                1,
+                false,
+                "",
+                &HashSet::new()
+            ),
             Action::None
         );
     }
