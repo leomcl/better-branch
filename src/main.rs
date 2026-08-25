@@ -209,10 +209,39 @@ fn main() {
                 }
             }
         }
-        Ok(None) => return,
+        Ok(None) => (),
         Err(e) => {
             eprintln!("Menu error: {}", e);
             exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recognizes_all_protected_branches() {
+        for branch in ["main", "master", "develop", "trunk"] {
+            assert!(
+                is_protected_branch(branch),
+                "{:?} should be protected",
+                branch
+            );
+        }
+    }
+
+    #[test]
+    fn does_not_protect_other_branches() {
+        assert!(!is_protected_branch("feature/foo"));
+        assert!(!is_protected_branch("release/v1.0"));
+        assert!(!is_protected_branch(""));
+    }
+
+    #[test]
+    fn protection_is_case_sensitive() {
+        assert!(!is_protected_branch("Main"));
+        assert!(!is_protected_branch("MAIN"));
     }
 }
